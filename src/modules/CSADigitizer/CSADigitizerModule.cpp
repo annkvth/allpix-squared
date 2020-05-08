@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Implementation of default digitization module
+ * @brief Implementation of charge sensitive amplifier digitization module
  * @copyright Copyright (c) 2017-2020 CERN and the Allpix Squared authors.
  * This software is distributed under the terms of the MIT License, copied verbatim in the file "LICENSE.md".
  * In applying this license, CERN does not waive the privileges and immunities granted to it by virtue of its status as an
@@ -34,17 +34,20 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     random_generator_.seed(getRandomSeed());
 
     // Set defaults for config variables
-    config_.setDefault<int>("electronics_noise", Units::get(110, "e"));
-    config_.setDefault<double>("gain", 1.0);
-    config_.setDefault<double>("gain_smearing", 0.0);
-    config_.setDefault<int>("threshold", Units::get(600, "e"));
-    config_.setDefault<int>("threshold_smearing", Units::get(30, "e"));
+    config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
+    config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
+    config_.setDefault<double>("feedback_resistance", Units::get(5e6, "V*s/C"));
+    // config_.setDefault<int>("electronics_noise", Units::get(110, "e"));
+    // config_.setDefault<double>("gain", 1.0);
+    // config_.setDefault<double>("gain_smearing", 0.0);
+    // config_.setDefault<int>("threshold", Units::get(600, "e"));
+    // config_.setDefault<int>("threshold_smearing", Units::get(30, "e"));
 
-    config_.setDefault<int>("adc_resolution", 0);
-    config_.setDefault<int>("adc_smearing", Units::get(300, "e"));
-    config_.setDefault<double>("adc_offset", Units::get(0, "e"));
-    config_.setDefault<double>("adc_slope", Units::get(10, "e"));
-    config_.setDefault<bool>("allow_zero_adc", false);
+    // config_.setDefault<int>("adc_resolution", 0);
+    // config_.setDefault<int>("adc_smearing", Units::get(300, "e"));
+    // config_.setDefault<double>("adc_offset", Units::get(0, "e"));
+    // config_.setDefault<double>("adc_slope", Units::get(10, "e"));
+    // config_.setDefault<bool>("allow_zero_adc", false);
 
     config_.setDefault<bool>("output_plots", false);
     config_.setDefault<int>("output_plots_scale", Units::get(30, "ke"));
@@ -107,82 +110,82 @@ void CSADigitizerModule::run(unsigned int) {
         auto charge = static_cast<double>(pixel_charge.getCharge());
 
         LOG(DEBUG) << "Received pixel " << pixel_index << ", charge " << Units::display(charge, "e");
-        if(config_.get<bool>("output_plots")) {
-            h_pxq->Fill(charge / 1e3);
-        }
+        // if(config_.get<bool>("output_plots")) {
+        //     h_pxq->Fill(charge / 1e3);
+        // }
 
-        // Add electronics noise from Gaussian:
-        std::normal_distribution<double> el_noise(0, config_.get<unsigned int>("electronics_noise"));
-        charge += el_noise(random_generator_);
+        // // Add electronics noise from Gaussian:
+        // std::normal_distribution<double> el_noise(0, config_.get<unsigned int>("electronics_noise"));
+        // charge += el_noise(random_generator_);
 
-        LOG(DEBUG) << "Charge with noise: " << Units::display(charge, "e");
-        if(config_.get<bool>("output_plots")) {
-            h_pxq_noise->Fill(charge / 1e3);
-        }
+        // LOG(DEBUG) << "Charge with noise: " << Units::display(charge, "e");
+        // if(config_.get<bool>("output_plots")) {
+        //     h_pxq_noise->Fill(charge / 1e3);
+        // }
 
-        // Smear the gain factor, Gaussian distribution around "gain" with width "gain_smearing"
-        std::normal_distribution<double> gain_smearing(config_.get<double>("gain"), config_.get<double>("gain_smearing"));
-        double gain = gain_smearing(random_generator_);
-        if(config_.get<bool>("output_plots")) {
-            h_gain->Fill(gain);
-        }
+        // // Smear the gain factor, Gaussian distribution around "gain" with width "gain_smearing"
+        // std::normal_distribution<double> gain_smearing(config_.get<double>("gain"), config_.get<double>("gain_smearing"));
+        // double gain = gain_smearing(random_generator_);
+        // if(config_.get<bool>("output_plots")) {
+        //     h_gain->Fill(gain);
+        // }
 
-        // Apply the gain to the charge:
-        charge *= gain;
-        LOG(DEBUG) << "Charge after amplifier (gain): " << Units::display(charge, "e");
-        if(config_.get<bool>("output_plots")) {
-            h_pxq_gain->Fill(charge / 1e3);
-        }
+        // // Apply the gain to the charge:
+        // charge *= gain;
+        // LOG(DEBUG) << "Charge after amplifier (gain): " << Units::display(charge, "e");
+        // if(config_.get<bool>("output_plots")) {
+        //     h_pxq_gain->Fill(charge / 1e3);
+        // }
 
-        // Smear the threshold, Gaussian distribution around "threshold" with width "threshold_smearing"
-        std::normal_distribution<double> thr_smearing(config_.get<unsigned int>("threshold"),
-                                                      config_.get<unsigned int>("threshold_smearing"));
-        double threshold = thr_smearing(random_generator_);
-        if(config_.get<bool>("output_plots")) {
-            h_thr->Fill(threshold / 1e3);
-        }
+        // // Smear the threshold, Gaussian distribution around "threshold" with width "threshold_smearing"
+        // std::normal_distribution<double> thr_smearing(config_.get<unsigned int>("threshold"),
+        //                                               config_.get<unsigned int>("threshold_smearing"));
+        // double threshold = thr_smearing(random_generator_);
+        // if(config_.get<bool>("output_plots")) {
+        //     h_thr->Fill(threshold / 1e3);
+        // }
 
-        // Discard charges below threshold:
-        if(charge < threshold) {
-            LOG(DEBUG) << "Below smeared threshold: " << Units::display(charge, "e") << " < "
-                       << Units::display(threshold, "e");
-            continue;
-        }
+        // // Discard charges below threshold:
+        // if(charge < threshold) {
+        //     LOG(DEBUG) << "Below smeared threshold: " << Units::display(charge, "e") << " < "
+        //                << Units::display(threshold, "e");
+        //     continue;
+        // }
 
-        LOG(DEBUG) << "Passed threshold: " << Units::display(charge, "e") << " > " << Units::display(threshold, "e");
-        if(config_.get<bool>("output_plots")) {
-            h_pxq_thr->Fill(charge / 1e3);
-        }
+        // LOG(DEBUG) << "Passed threshold: " << Units::display(charge, "e") << " > " << Units::display(threshold, "e");
+        // if(config_.get<bool>("output_plots")) {
+        //     h_pxq_thr->Fill(charge / 1e3);
+        // }
 
-        // Simulate ADC if resolution set to more than 0bit
-        if(config_.get<int>("adc_resolution") > 0) {
-            // temporarily store old charge for histogramming:
-            auto original_charge = charge;
+        // // Simulate ADC if resolution set to more than 0bit
+        // if(config_.get<int>("adc_resolution") > 0) {
+        //     // temporarily store old charge for histogramming:
+        //     auto original_charge = charge;
 
-            // Add ADC smearing:
-            std::normal_distribution<double> adc_smearing(0, config_.get<unsigned int>("adc_smearing"));
-            charge += adc_smearing(random_generator_);
-            if(config_.get<bool>("output_plots")) {
-                h_pxq_adc_smear->Fill(charge / 1e3);
-            }
-            LOG(DEBUG) << "Smeared for simulating limited ADC sensitivity: " << Units::display(charge, "e");
+        //     // Add ADC smearing:
+        //     std::normal_distribution<double> adc_smearing(0, config_.get<unsigned int>("adc_smearing"));
+        //     charge += adc_smearing(random_generator_);
+        //     if(config_.get<bool>("output_plots")) {
+        //         h_pxq_adc_smear->Fill(charge / 1e3);
+        //     }
+        //     LOG(DEBUG) << "Smeared for simulating limited ADC sensitivity: " << Units::display(charge, "e");
 
-            // Convert to ADC units and precision, make sure ADC count is at least 1:
-            charge = static_cast<double>(std::max(
-                std::min(static_cast<int>((config_.get<double>("adc_offset") + charge) / config_.get<double>("adc_slope")),
-                         (1 << config_.get<int>("adc_resolution")) - 1),
-                (config_.get<bool>("allow_zero_adc") ? 0 : 1)));
-            LOG(DEBUG) << "Charge converted to ADC units: " << charge;
+        //     // Convert to ADC units and precision, make sure ADC count is at least 1:
+        //     charge = static_cast<double>(std::max(
+        //         std::min(static_cast<int>((config_.get<double>("adc_offset") + charge) / config_.get<double>("adc_slope")),
+        //                  (1 << config_.get<int>("adc_resolution")) - 1),
+        //         (config_.get<bool>("allow_zero_adc") ? 0 : 1)));
+        //     LOG(DEBUG) << "Charge converted to ADC units: " << charge;
 
-            if(config_.get<bool>("output_plots")) {
-                h_calibration->Fill(original_charge / 1e3, charge);
-                h_pxq_adc->Fill(charge);
-            }
-        } else {
-            // Fill the final pixel charge
-            if(config_.get<bool>("output_plots")) {
-                h_pxq_adc->Fill(charge / 1e3);
-            }
+        //     if(config_.get<bool>("output_plots")) {
+        //         h_calibration->Fill(original_charge / 1e3, charge);
+        //         h_pxq_adc->Fill(charge);
+        //     }
+        // } else {
+        //     // Fill the final pixel charge
+        //     if(config_.get<bool>("output_plots")) {
+        //         h_pxq_adc->Fill(charge / 1e3);
+        //     }
         }
 
         // Add the hit to the hitmap
