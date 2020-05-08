@@ -110,9 +110,9 @@ void CSADigitizerModule::run(unsigned int) {
         auto charge = static_cast<double>(pixel_charge.getCharge());
 
         LOG(DEBUG) << "Received pixel " << pixel_index << ", charge " << Units::display(charge, "e");
-        // if(config_.get<bool>("output_plots")) {
-        //     h_pxq->Fill(charge / 1e3);
-        // }
+        if(config_.get<bool>("output_plots")) {
+            h_pxq->Fill(charge / 1e3);
+        }
 
         // // Add electronics noise from Gaussian:
         // std::normal_distribution<double> el_noise(0, config_.get<unsigned int>("electronics_noise"));
@@ -186,7 +186,7 @@ void CSADigitizerModule::run(unsigned int) {
         //     if(config_.get<bool>("output_plots")) {
         //         h_pxq_adc->Fill(charge / 1e3);
         //     }
-        }
+        // }
 
         // Add the hit to the hitmap
         hits.emplace_back(pixel, 0, charge, &pixel_charge);
