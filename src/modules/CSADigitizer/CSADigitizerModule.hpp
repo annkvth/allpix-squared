@@ -69,6 +69,10 @@ namespace allpix {
         // Statistics
         unsigned long long total_hits_{};
 
+      
+        // parasitic_capacitance, feedback_capacitance, transconductance, krummenacher_current 
+        double ct_, cf_, g_, ikrum_;
+      
         // Output histograms
         TH1D *h_pxq{}, *h_pxq_noise{}, *h_gain{}, *h_pxq_gain{}, *h_thr{}, *h_pxq_thr{}, *h_pxq_adc_smear{}, *h_pxq_adc{};
         TH2D* h_calibration{};
