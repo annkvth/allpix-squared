@@ -37,6 +37,22 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("feedback_resistance", Units::get(5e6, "V*s/C"));
+
+    config_.setDefault<double>("parasitic_capacitance", 50.0);
+    config_.setDefault<double>("transconductance", 1.0);
+
+    config_.setDefault<int>("threshold", Units::get(800, "mV"));
+    config_.setDefault<int>("threshold_smearing", Units::get(5, "mV"));
+
+    config_.setDefault<int>("clock_cycle", Units::get(10, "ns"));
+
+
+    // Copy some variables from configuration to avoid lookups:
+    cf_ = config_.get<double>("feedback_capacitance");
+    ct_ = config_.get<double>("parasitic_capacitance");
+    g_ = config_.get<double>("transconductance");
+    ikrum_ = config_.get<double>("krummenacher_current");
+    
     // config_.setDefault<int>("electronics_noise", Units::get(110, "e"));
     // config_.setDefault<double>("gain", 1.0);
     // config_.setDefault<double>("gain_smearing", 0.0);
@@ -54,6 +70,8 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<int>("output_plots_bins", 100);
 }
 
+
+//asv init just a copy of generic digitizer for now - histograms don't make too much sense
 void CSADigitizerModule::init() {
     // Conversion to ADC units requested:
     if(config_.get<int>("adc_resolution") > 31) {
@@ -109,7 +127,32 @@ void CSADigitizerModule::run(unsigned int) {
         auto pixel_index = pixel.getIndex();
         auto charge = static_cast<double>(pixel_charge.getCharge());
 
+
+	//asv copied from Simon:
+	const auto& pulse = pixel_charge.getPulse();
+
+        auto transfer = [&](double q_ind, double time) {
+            // Transfer function for Krummenacher circuit:
+            // h(t) = Q / C_f * exp (w_2 * t − exp(w_1*t))
+            // with w_1 = g * C_f / C_t and w_2 = 1 / C_f / R_f = 1 / C_f / I_krum * 20
+            return (q_ind / cf_ * exp(time / cf_ / ikrum_ * 20 - exp(g_ * cf_ / ct_ * time)));
+        };
+	
         LOG(DEBUG) << "Received pixel " << pixel_index << ", charge " << Units::display(charge, "e");
+
+        // double charge = 0;
+        // size_t steps = 0;
+        // auto timestep = pulse.getBinning();
+        // for(auto& q_ind : pulse.getPulse()) {
+        //     LOG(TRACE) << "Charge " << Units::display(charge, "e") << " Transfer at "
+        //                << timestep * static_cast<double>(steps) << ": "
+        //                << transfer(charge, timestep * static_cast<double>(steps)) << " "
+        //                << transfer(q_ind, timestep * static_cast<double>(steps));
+        //     charge += q_ind;
+        //     charge -= ikrum_ * timestep;
+        //     steps++;
+        // }
+	
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(charge / 1e3);
         }
