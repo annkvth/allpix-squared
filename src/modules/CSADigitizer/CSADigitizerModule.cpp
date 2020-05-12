@@ -59,7 +59,7 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     // config_.setDefault<int>("threshold", Units::get(600, "e"));
     // config_.setDefault<int>("threshold_smearing", Units::get(30, "e"));
 
-    // config_.setDefault<int>("adc_resolution", 0);
+    config_.setDefault<int>("adc_resolution", 0);
     // config_.setDefault<int>("adc_smearing", Units::get(300, "e"));
     // config_.setDefault<double>("adc_offset", Units::get(0, "e"));
     // config_.setDefault<double>("adc_slope", Units::get(10, "e"));
