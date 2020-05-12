@@ -59,6 +59,8 @@ namespace allpix {
         void finalize() override;
 
     private:
+        bool output_plots_{}, output_pulsegraphs_{};
+      
         std::mt19937_64 random_generator_;
 
         Messenger* messenger_;
@@ -74,8 +76,9 @@ namespace allpix {
         double ct_, cf_, g_, ikrum_;
       
         // Output histograms
-        TH1D *h_pxq{}, *h_pxq_noise{}, *h_gain{}, *h_pxq_gain{}, *h_thr{}, *h_pxq_thr{}, *h_pxq_adc_smear{}, *h_pxq_adc{};
-        TH2D* h_calibration{};
+        TH1D *h_pxq{}, *h_amplified_charge_{}, *h_pulse_charge_{};
+        // TH1D  h_pxq_noise{}, *h_gain{}, *h_pxq_gain{}, *h_thr{}, *h_pxq_thr{}, *h_pxq_adc_smear{}, *h_pxq_adc{};
+        // TH2D* h_calibration{};
     };
 } // namespace allpix
 
