@@ -39,7 +39,7 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
-    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/(s *V)")); 
+    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s /V)")); 
 
     config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "meV"));  // Boltzmann kT at 298K
 
