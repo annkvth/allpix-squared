@@ -61,8 +61,8 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     // helper variables: transconductance and resistance in the feedback loop 
     // weak inversion: gmF = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
     // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
-    gm1 = ikrum_/(2.0*1.5*vt_)  ;  
-    rf_ = 2./gm1;       //feedback resistor
+    gm1_ = ikrum_/(2.0*1.5*vt_)  ;  
+    rf_ = 2./gm1_;       //feedback resistor
     
     output_plots_ = config_.get<bool>("output_plots");
     output_pulsegraphs_ = config_.get<bool>("output_pulsegraphs");
@@ -110,7 +110,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
 				     << ", time   : " <<  time << ", ikrum_ : " <<  ikrum_ 
 				     << ", g_     : " <<  g_;
 	
-            return (q_ind / cf_ * exp(time / cf_ / ikrum_ * 20 - exp(g_ * cf_ / ct_ * time)));
+            return (q_ind / cf_ * exp(time / cf_ / ikrum_ * 20 - exp(g_ * cf_ / co_ * time)));
         };
 	
 
