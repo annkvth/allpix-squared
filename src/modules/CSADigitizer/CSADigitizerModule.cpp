@@ -36,16 +36,12 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
 
     // Set defaults for config variables
     config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
+    config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
-    config_.setDefault<double>("feedback_resistance", Units::get(5e6, "V*s/C"));
+    config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
+    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/(s *V)")); 
 
-    config_.setDefault<double>("parasitic_capacitance", 50.0);
-    config_.setDefault<double>("transconductance", 1.0);
-
-    config_.setDefault<int>("threshold", Units::get(800, "mV"));
-    config_.setDefault<int>("threshold_smearing", Units::get(5, "mV"));
-
-    config_.setDefault<int>("clock_cycle", Units::get(10, "ns"));
+    config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "meV"));  // Boltzmann kT at 298K
 
     config_.setDefault<bool>("output_pulsegraphs", false);
     config_.setDefault<bool>("output_plots", config_.get<bool>("output_pulsegraphs"));
@@ -54,11 +50,19 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
 
 
     // Copy some variables from configuration to avoid lookups:
-    cf_ = config_.get<double>("feedback_capacitance");
-    ct_ = config_.get<double>("parasitic_capacitance");
-    g_ = config_.get<double>("transconductance");
     ikrum_ = config_.get<double>("krummenacher_current");
+    cd_ = config_.get<double>("detector_capacitance");
+    cf_ = config_.get<double>("feedback_capacitance");
+    co_ = config_.get<double>("amp_output_capacitance");
+    g_ = config_.get<double>("transconductance"); 
+    vt_ = config_.get<double>("v_temperature");
+   
 
+    // helper variables: transconductance and resistance in the feedback loop 
+    // weak inversion: gmF = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
+    // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
+    gm1 = ikrum_/(2.0*1.5*vt_)  ;  
+    rf_ = 2./gm1;       //feedback resistor
     
     output_plots_ = config_.get<bool>("output_plots");
     output_pulsegraphs_ = config_.get<bool>("output_pulsegraphs");
@@ -66,7 +70,7 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
 }
 
 
-//asv init just a copy of generic digitizer for now - histograms don't make too much sense
+
 void CSADigitizerModule::init() {
 
     if(config_.get<bool>("output_plots")) {
@@ -102,6 +106,10 @@ void CSADigitizerModule::run(unsigned int event_num) {
             // Transfer function for Krummenacher circuit:
             // h(t) = Q / C_f * exp (w_2 * t − exp(w_1*t))
             // with w_1 = g * C_f / C_t and w_2 = 1 / C_f / R_f = 1 / C_f / I_krum * 20
+			  LOG(TRACE) << "q_ind  : " <<  q_ind  << ", cf_	   : " <<  cf_	   
+				     << ", time   : " <<  time << ", ikrum_ : " <<  ikrum_ 
+				     << ", g_     : " <<  g_;
+	
             return (q_ind / cf_ * exp(time / cf_ / ikrum_ * 20 - exp(g_ * cf_ / ct_ * time)));
         };
 	
@@ -115,8 +123,8 @@ void CSADigitizerModule::run(unsigned int event_num) {
 
 	
         for(auto& q_ind : pulse_vec) {
-            LOG(TRACE) << "Charge " << Units::display(charge, "e") << " Transfer at "
-                       << timestep * static_cast<double>(steps) << ": "
+	  LOG(TRACE) << "Charge " << Units::display(charge, "e") << " (ind: " << Units::display(q_ind, "e")
+		       << ") Transfer at " << timestep * static_cast<double>(steps) << ": "
                        << transfer(charge, timestep * static_cast<double>(steps)) << " "
                        << transfer(q_ind, timestep * static_cast<double>(steps));
             charge += q_ind;
@@ -202,3 +210,37 @@ void CSADigitizerModule::finalize() {
 
     LOG(INFO) << "Digitized " << total_hits_ << " pixel hits in total";
 }
+
+
+
+
+    // transfer function from Kleczek 2016 JINST11 C12001
+    // H(s) = Rf / ((1+ tau_f s) * (1 + tau_r s)), with
+    // tau_f = Rf Cf , rise time constant tau_r = (C_det * C_out) / ( g_ * C_F )
+    // inverse Laplace transform R/((1+a*s)*(1+s*b)) is (wolfram alpha) (R (e^(-t/a) - e^(-t/b)))/(a - b)  
+
+//  //create transfer function:
+//     nImpResEl = nAmpResponseElements;
+//     impRes = new double[nImpResEl];
+//     for (int i = 0; i < nImpResEl; i++) {
+//         impRes[i] = exp(-i* pulsePrecision * 1e-9 *w2 - exp(-i* pulsePrecision * 1e-9* w1));
+//         //cout << "Debug1: " << i << " value: " << impRes[i] << endl;
+//     }
+// convolve(inducedChargeArray, ampResponse, nPulseArrayElements, impRes, nImpResEl);
+// convolve(double* in, double* out, int inLength, double* kernel, int kernel_length)
+// {
+//     double maxCharge = 0;
+
+//     for(int i=0; i<(kernel_length); i++){
+
+//         out[i] = 0.0;
+//         for(int k=0; k<kernel_length; k++){
+//             if((i-k) >=0 && (i-k) < inLength){
+//                 out[i] += in[i-k] * kernel[k];
+//             }
+//         }
+//         if(out[i] > maxCharge) maxCharge = out[i];
+//     }
+
+//     return maxCharge;
+// }

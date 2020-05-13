@@ -72,8 +72,14 @@ namespace allpix {
         unsigned long long total_hits_{};
 
       
-        // parasitic_capacitance, feedback_capacitance, transconductance, krummenacher_current 
-        double ct_, cf_, g_, ikrum_;
+        // krummenacher_current, detector_capacitance, feedback_capacitance, amp_output_capacitance, transconductance, v_temperature
+        double ikrum_, cd_, cf_, co_, g_, vt_;
+      
+        // helper variables for transfer function
+        double gm1_, rf_;
+
+	  
+
       
         // Output histograms
         TH1D *h_pxq{}, *h_amplified_charge_{}, *h_pulse_charge_{};
