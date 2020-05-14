@@ -20,6 +20,7 @@
 
 #include "objects/PixelCharge.hpp"
 
+#include <TF1.h>
 #include <TH1D.h>
 #include <TH2D.h>
 
@@ -73,14 +74,14 @@ namespace allpix {
 
       
         // krummenacher_current, detector_capacitance, feedback_capacitance, amp_output_capacitance, transconductance, v_temperature
-        double ikrum_, cd_, cf_, co_, g_, vt_;
+        double ikrum_, cd_, cf_, co_, gm_, vt_;
       
         // helper variables for transfer function
-        double gm1_, rf_;
+        double gf_, rf_, tmax_;
+        double *impulseResponse_;	  
+        TF1 *fImpulseResponse_;
 
-	  
-
-      
+        std::vector<double> amplified_pulse_;
         // Output histograms
         TH1D *h_pxq{}, *h_amplified_charge_{}, *h_pulse_charge_{};
         // TH1D  h_pxq_noise{}, *h_gain{}, *h_pxq_gain{}, *h_thr{}, *h_pxq_thr{}, *h_pxq_adc_smear{}, *h_pxq_adc{};

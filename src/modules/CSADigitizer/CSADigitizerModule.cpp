@@ -39,9 +39,10 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
-    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s /V)")); 
-
-    config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "meV"));  // Boltzmann kT at 298K
+    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s") /Units::get(1, "V")); //asv can't get the unit C/s/V ?!
+    //    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s/V")); //asv can't get the unit C/s/V ?!
+    config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
+    config_.setDefault<double>("amp_time_window", Units::get(0.5e-6, "s"));
 
     config_.setDefault<bool>("output_pulsegraphs", false);
     config_.setDefault<bool>("output_plots", config_.get<bool>("output_pulsegraphs"));
@@ -54,19 +55,33 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     cd_ = config_.get<double>("detector_capacitance");
     cf_ = config_.get<double>("feedback_capacitance");
     co_ = config_.get<double>("amp_output_capacitance");
-    g_ = config_.get<double>("transconductance"); 
+    gm_ = config_.get<double>("transconductance"); 
     vt_ = config_.get<double>("v_temperature");
-   
+    tmax_ = config_.get<double>("amp_time_window");
 
-    // helper variables: transconductance and resistance in the feedback loop 
-    // weak inversion: gmF = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
-    // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
-    gm1_ = ikrum_/(2.0*1.5*vt_)  ;  
-    rf_ = 2./gm1_;       //feedback resistor
-    
+
     output_plots_ = config_.get<bool>("output_plots");
     output_pulsegraphs_ = config_.get<bool>("output_pulsegraphs");
 
+    // helper variables: transconductance and resistance in the feedback loop 
+    // weak inversion: gf = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
+    // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
+    gf_ = ikrum_/(2.0*1.5*vt_)  ;  
+    rf_ = 2./gf_;       //feedback resistor
+
+    // impulse response of the CSA from Kleczek 2016 JINST11 C12001
+    // H(s) = Rf / ((1+ tau_f s) * (1 + tau_r s)), with
+    // tau_f = Rf Cf , rise time constant tau_r = (C_det * C_out) / ( gm_ * C_F )
+    // inverse Laplace transform R/((1+a*s)*(1+s*b)) is (wolfram alpha) (R (e^(-t/a) - e^(-t/b))) /(a - b) 
+    fImpulseResponse_ = new TF1("fImpulseResponse_", "[0] * ( exp(-x / [1]) - exp(-x/[2]) ) / ([1]-[2])", 0, tmax_);
+    fImpulseResponse_->SetParameters(rf_, rf_*cf_, (cd_*co_)/(gm_ *cf_));
+    LOG(DEBUG) << "Parameters: rf " << Units::display(rf_, "V*s/C") << ", cf_ " << Units::display(cf_, "C/V")
+	       << ", cd_ " << Units::display(cd_, "C/V") << ", co_ " << Units::display(co_, "C/V")
+	       << ", gm_ " << Units::display(gm_, "C/s/V");
+    LOG(DEBUG) << "in native units: rf " << rf_ << ", cf_ " << cf_ << ", cd_ " << cd_ << ", co_ " << co_  << ", gm_ " << gm_;
+
+    LOG(DEBUG) << "at 50 ns: " << fImpulseResponse_->Eval(50e-9) <<" or maybe " << fImpulseResponse_->Eval(50)
+	 << " or even " << 7e6 * ( exp(-50e-9 / 7e6*5e-15) - exp(-50e-9*50e-6*5e-15/(100e-15*20e-15)) ) / ( 7e6*5e-15 -(100e-15*20e-15)/(50e-6*5e-15) );
 }
 
 
@@ -86,7 +101,20 @@ void CSADigitizerModule::init() {
         h_pulse_charge_ = new TH1D("pulsecharge", "input pulse charge per pixel;input pulse pixel charge [ke];pixels", nbins, 0, maximum);
 
     }
+
+    //asv todo do not hardcode this!! setup parameter ,compare to pulse timestep
+       double binning = 0.01;
+	const int npx = static_cast<int>(ceil(tmax_/binning));
+	LOG(TRACE) << "binning  : " <<  binning << ", tmax_ : " <<  tmax_ << ", npx " << npx;
+	
+	impulseResponse_ = new double[npx];
+	for (int ipx=0; ipx<npx; ++ipx){
+	  impulseResponse_[ipx]=fImpulseResponse_->Eval(ipx*binning);
+	}
+    
 }
+
+
 
 void CSADigitizerModule::run(unsigned int event_num) {
     // Loop through all pixels with charges
@@ -98,44 +126,42 @@ void CSADigitizerModule::run(unsigned int event_num) {
 
         LOG(DEBUG) << "Received pixel " << pixel_index << ", charge " << Units::display(inputcharge, "e");
 
-	//asv copied from Simon:
-	const auto& pulse = pixel_charge.getPulse();
-	auto pulse_vec = pulse.getPulse();
-	
-        auto transfer = [&](double q_ind, double time) {
-            // Transfer function for Krummenacher circuit:
-            // h(t) = Q / C_f * exp (w_2 * t − exp(w_1*t))
-            // with w_1 = g * C_f / C_t and w_2 = 1 / C_f / R_f = 1 / C_f / I_krum * 20
-			  LOG(TRACE) << "q_ind  : " <<  q_ind  << ", cf_	   : " <<  cf_	   
-				     << ", time   : " <<  time << ", ikrum_ : " <<  ikrum_ 
-				     << ", g_     : " <<  g_;
-	
-            return (q_ind / cf_ * exp(time / cf_ / ikrum_ * 20 - exp(g_ * cf_ / co_ * time)));
-        };
-	
-
-        double charge = 0;
-        size_t steps = 0;
+	const auto& pulse = pixel_charge.getPulse(); // the pulse containing charges and times
+	auto pulse_vec = pulse.getPulse();           // the vector of the charges 
         auto timestep = pulse.getBinning();
-	LOG(TRACE) << "Preparing pulse for pixel " << pixel_index << ", " << pulse_vec.size() << " bins of "
-                       << Units::display(timestep, {"ps", "ns"})
-                       << ", total charge: " << Units::display(pulse.getCharge(), "e");
-
+	const int npx = static_cast<int>(ceil(tmax_/timestep));
+	LOG(TRACE) << "timestep  : " <<  timestep << ", tmax_ : " <<  tmax_ << ", npx " << npx;
 	
-        for(auto& q_ind : pulse_vec) {
-	  LOG(TRACE) << "Charge " << Units::display(charge, "e") << " (ind: " << Units::display(q_ind, "e")
-		       << ") Transfer at " << timestep * static_cast<double>(steps) << ": "
-                       << transfer(charge, timestep * static_cast<double>(steps)) << " "
-                       << transfer(q_ind, timestep * static_cast<double>(steps));
-            charge += q_ind;
-            charge -= ikrum_ * timestep;
-            steps++;
-        }
+	
+	Pulse output_pulse(timestep);
+	unsigned int input_length = pulse_vec.size();
+	LOG(TRACE) << "Preparing pulse for pixel " << pixel_index << ", " << pulse_vec.size() << " bins of "
+		   << Units::display(timestep, {"ps", "ns"})
+		   << ", total charge: " << Units::display(pulse.getCharge(), "e");
+	//convolution of the pulse (size input_length) with the impulse response (size npx)
+	for(unsigned int k=0; k<npx; ++k){
+	  for(unsigned int i=0; i<=k; ++i){
+	    if( (k-i) < input_length){
+	      //asv to do: remove this evil hack! voltage pulse... mV instead of MV would be nive
+	      output_pulse.addCharge(pulse_vec.at(k-i) * impulseResponse_[i] * 1e9, timestep * static_cast<double>(k));
+	      // if (k<100 && pulse_vec.at(k-i) != 0){
+	      // 	LOG(TRACE) << "i " << i << ", k " << k << ", pulse_vec.at(k-i) " << pulse_vec.at(k-i) 
+	      // 		   << ", impulseResponse_[i] " << impulseResponse_[i] << ", time " << timestep * static_cast<double>(k);
+	      // }
+	    }
+	  }
+	}
+	auto output_vec = output_pulse.getPulse(); 
+	LOG(TRACE) << "amplified signal" << Units::display(output_pulse.getCharge(), "e")
+		   << " in a pulse with " << output_vec.size() << "bins";
+
+
+
 	
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(inputcharge / 1e3);
 	    h_pulse_charge_->Fill(pulse.getCharge() / 1e3);
-	    h_amplified_charge_->Fill(charge / 1e3);
+	    h_amplified_charge_->Fill(output_pulse.getCharge() / 1e3);
         }
 
         // Fill a graphs with the individual pixel pulses:
@@ -159,7 +185,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
 
             // Generate graphs of integrated charge over time:
             std::vector<double> charge_vec;
-            charge = 0;
+            double charge = 0;
             for(const auto& bin : pulse_vec) {
                 charge += bin;
                 charge_vec.push_back(charge);
@@ -175,12 +201,47 @@ void CSADigitizerModule::run(unsigned int event_num) {
                                     "), Q_{tot} = " + std::to_string(pulse.getCharge()) + " e")
                                        .c_str());
             getROOTDirectory()->WriteTObject(charge_graph, name.c_str());
-        }
+
+	    // -------- now the same for the amplified (and shaped) pulses
+            std::vector<double> amptime(output_vec.size());
+            // clang-format off
+            std::generate(amptime.begin(), amptime.end(), [n = 0.0, timestep]() mutable {  auto now = n; n += timestep; return now; });
+            // clang-format on
+
+            name = "output_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
+	           std::to_string(pixel_index.y());
+            auto output_graph = new TGraph(static_cast<int>(output_vec.size()), &amptime[0], &output_vec[0]);
+            output_graph->GetXaxis()->SetTitle("t [ns]");
+            output_graph->GetYaxis()->SetTitle("CSA output [mV]");
+            output_graph->SetTitle(("Amplifier signal in pixel (" + std::to_string(pixel_index.x()) + "," +
+                                   std::to_string(pixel_index.y()) +  ")")
+                                      .c_str());
+            getROOTDirectory()->WriteTObject(output_graph, name.c_str());
+
+            // // integrated charge over time:
+            // std::vector<double> output_charge_vec;
+            // charge = 0;
+            // for(const auto& bin : output_vec) {
+            //     charge += bin;
+            //     output_charge_vec.push_back(charge);
+            // }
+
+            // name = "output_charge_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
+            //        std::to_string(pixel_index.y());
+            // auto output_charge_graph = new TGraph(static_cast<int>(output_charge_vec.size()), &amptime[0], &output_charge_vec[0]);
+            // output_charge_graph->GetXaxis()->SetTitle("t [ns]");
+            // output_charge_graph->GetYaxis()->SetTitle("CSA output [mV]");
+            // output_charge_graph->SetTitle(("Accumulated amplified signal in pixel (" + std::to_string(pixel_index.x()) + "," +
+            //                         std::to_string(pixel_index.y()) +
+            //                         "), Q_{tot} = " + std::to_string(output_pulse.getCharge()) + " e")
+            //                            .c_str());
+            // getROOTDirectory()->WriteTObject(output_charge_graph, name.c_str());
+	}
 
 
-	
+	// asv todo THINK ABOUT WHAT TO DO HERE
         // Add the hit to the hitmap
-        hits.emplace_back(pixel, 0, charge, &pixel_charge);
+        hits.emplace_back(pixel, 0, output_pulse.getCharge(), &pixel_charge);
     }
 
     // Output summary and update statistics
@@ -212,35 +273,3 @@ void CSADigitizerModule::finalize() {
 }
 
 
-
-
-    // transfer function from Kleczek 2016 JINST11 C12001
-    // H(s) = Rf / ((1+ tau_f s) * (1 + tau_r s)), with
-    // tau_f = Rf Cf , rise time constant tau_r = (C_det * C_out) / ( g_ * C_F )
-    // inverse Laplace transform R/((1+a*s)*(1+s*b)) is (wolfram alpha) (R (e^(-t/a) - e^(-t/b)))/(a - b)  
-
-//  //create transfer function:
-//     nImpResEl = nAmpResponseElements;
-//     impRes = new double[nImpResEl];
-//     for (int i = 0; i < nImpResEl; i++) {
-//         impRes[i] = exp(-i* pulsePrecision * 1e-9 *w2 - exp(-i* pulsePrecision * 1e-9* w1));
-//         //cout << "Debug1: " << i << " value: " << impRes[i] << endl;
-//     }
-// convolve(inducedChargeArray, ampResponse, nPulseArrayElements, impRes, nImpResEl);
-// convolve(double* in, double* out, int inLength, double* kernel, int kernel_length)
-// {
-//     double maxCharge = 0;
-
-//     for(int i=0; i<(kernel_length); i++){
-
-//         out[i] = 0.0;
-//         for(int k=0; k<kernel_length; k++){
-//             if((i-k) >=0 && (i-k) < inLength){
-//                 out[i] += in[i-k] * kernel[k];
-//             }
-//         }
-//         if(out[i] > maxCharge) maxCharge = out[i];
-//     }
-
-//     return maxCharge;
-// }
