@@ -102,7 +102,7 @@ void CSADigitizerModule::init() {
 
     }
 
-    //asv todo do not hardcode this!! setup parameter ,compare to pulse timestep
+    //asv todo do not hardcode this!! setup parameter , compare to pulse timestep
        double binning = 0.01;
 	const int npx = static_cast<int>(ceil(tmax_/binning));
 	LOG(TRACE) << "binning  : " <<  binning << ", tmax_ : " <<  tmax_ << ", npx " << npx;
@@ -142,10 +142,10 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	for(unsigned int k=0; k<npx; ++k){
 	  for(unsigned int i=0; i<=k; ++i){
 	    if( (k-i) < input_length){
-	      //asv to do: remove this evil hack! voltage pulse... mV instead of MV would be nive
-	      output_pulse.addCharge(pulse_vec.at(k-i) * impulseResponse_[i] * 1e9, timestep * static_cast<double>(k));
-	      // if (k<100 && pulse_vec.at(k-i) != 0){
-	      // 	LOG(TRACE) << "i " << i << ", k " << k << ", pulse_vec.at(k-i) " << pulse_vec.at(k-i) 
+	      //asv to do: not a charge, but voltage pulse... and maybe mV instead of MV would be nice?
+	      output_pulse.addCharge(pulse_vec.at(k-i) * impulseResponse_[i], timestep * static_cast<double>(k));
+	      // if (k>80&&k<100 && pulse_vec.at(k-i) != 0){
+	      // 	LOG(TRACE) << "i " << i << ", k " << k << ", pulse_vec.at(k-i) " << Units::convert(pulse_vec.at(k-i), "V")  
 	      // 		   << ", impulseResponse_[i] " << impulseResponse_[i] << ", time " << timestep * static_cast<double>(k);
 	      // }
 	    }
@@ -208,9 +208,14 @@ void CSADigitizerModule::run(unsigned int event_num) {
             std::generate(amptime.begin(), amptime.end(), [n = 0.0, timestep]() mutable {  auto now = n; n += timestep; return now; });
             // clang-format on
 
+	    // asv there needs to be a better way to plot in mV ?
+            std::vector<double> output_in_mV(output_vec.size());
+	    double scaleConvert{1e-9};
+	    std::transform(output_vec.begin(), output_vec.end(), output_in_mV.begin(), [&scaleConvert](auto& c){return c*scaleConvert;});
+
             name = "output_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
 	           std::to_string(pixel_index.y());
-            auto output_graph = new TGraph(static_cast<int>(output_vec.size()), &amptime[0], &output_vec[0]);
+            auto output_graph = new TGraph(static_cast<int>(output_vec.size()), &amptime[0], &output_in_mV[0]);
             output_graph->GetXaxis()->SetTitle("t [ns]");
             output_graph->GetYaxis()->SetTitle("CSA output [mV]");
             output_graph->SetTitle(("Amplifier signal in pixel (" + std::to_string(pixel_index.x()) + "," +
@@ -218,24 +223,6 @@ void CSADigitizerModule::run(unsigned int event_num) {
                                       .c_str());
             getROOTDirectory()->WriteTObject(output_graph, name.c_str());
 
-            // // integrated charge over time:
-            // std::vector<double> output_charge_vec;
-            // charge = 0;
-            // for(const auto& bin : output_vec) {
-            //     charge += bin;
-            //     output_charge_vec.push_back(charge);
-            // }
-
-            // name = "output_charge_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
-            //        std::to_string(pixel_index.y());
-            // auto output_charge_graph = new TGraph(static_cast<int>(output_charge_vec.size()), &amptime[0], &output_charge_vec[0]);
-            // output_charge_graph->GetXaxis()->SetTitle("t [ns]");
-            // output_charge_graph->GetYaxis()->SetTitle("CSA output [mV]");
-            // output_charge_graph->SetTitle(("Accumulated amplified signal in pixel (" + std::to_string(pixel_index.x()) + "," +
-            //                         std::to_string(pixel_index.y()) +
-            //                         "), Q_{tot} = " + std::to_string(output_pulse.getCharge()) + " e")
-            //                            .c_str());
-            // getROOTDirectory()->WriteTObject(output_charge_graph, name.c_str());
 	}
 
 
