@@ -49,6 +49,8 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<int>("output_plots_scale", Units::get(30, "ke"));
     config_.setDefault<int>("output_plots_bins", 100);
 
+    // asv noise test
+    config_.setDefault<double>("sigma_noise", Units::get(1e-3, "V"));
 
     // Copy some variables from configuration to avoid lookups:
     ikrum_ = config_.get<double>("krummenacher_current");
@@ -102,7 +104,7 @@ void CSADigitizerModule::init() {
 
     }
 
-    //asv todo do not hardcode this!! setup parameter , compare to pulse timestep
+    //asv todo do not hardcode the binning!! setup parameter , compare to pulse timestep in run
        double binning = 0.01;
 	const int npx = static_cast<int>(ceil(tmax_/binning));
 	LOG(TRACE) << "binning  : " <<  binning << ", tmax_ : " <<  tmax_ << ", npx " << npx;
@@ -142,12 +144,8 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	for(unsigned int k=0; k<npx; ++k){
 	  for(unsigned int i=0; i<=k; ++i){
 	    if( (k-i) < input_length){
-	      //asv to do: not a charge, but voltage pulse... and maybe mV instead of MV would be nice?
+	      //asv to do: not a charge, but voltage pulse... still use this?
 	      output_pulse.addCharge(pulse_vec.at(k-i) * impulseResponse_[i], timestep * static_cast<double>(k));
-	      // if (k>80&&k<100 && pulse_vec.at(k-i) != 0){
-	      // 	LOG(TRACE) << "i " << i << ", k " << k << ", pulse_vec.at(k-i) " << Units::convert(pulse_vec.at(k-i), "V")  
-	      // 		   << ", impulseResponse_[i] " << impulseResponse_[i] << ", time " << timestep * static_cast<double>(k);
-	      // }
 	    }
 	  }
 	}
@@ -157,6 +155,10 @@ void CSADigitizerModule::run(unsigned int event_num) {
 
 
 
+	//asv apply noise on the amplified pulse?
+	std::normal_distribution<double> pulse_smearing(0, config_.get<double>("sigma_noise"));
+	std::vector<double> output_with_noise(output_vec.size());
+	std::transform(output_vec.begin(), output_vec.end(), output_with_noise.begin(), [&pulse_smearing, this](auto& c){return c+pulse_smearing(random_generator_);});
 	
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(inputcharge / 1e3);
@@ -222,6 +224,22 @@ void CSADigitizerModule::run(unsigned int event_num) {
                                    std::to_string(pixel_index.y()) +  ")")
                                       .c_str());
             getROOTDirectory()->WriteTObject(output_graph, name.c_str());
+
+
+	    // -------- now the same for the amplified (and shaped) pulses with noise
+	    // asv there needs to be a better way to plot in mV ?
+            std::vector<double> output_with_noise_in_mV(output_with_noise.size());
+	    std::transform(output_with_noise.begin(), output_with_noise.end(), output_with_noise_in_mV.begin(), [&scaleConvert](auto& c){return c*scaleConvert;});
+
+            name = "output_with_noise_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
+	           std::to_string(pixel_index.y());
+            auto output_with_noise_graph = new TGraph(static_cast<int>(output_with_noise.size()), &amptime[0], &output_with_noise_in_mV[0]);
+            output_with_noise_graph->GetXaxis()->SetTitle("t [ns]");
+            output_with_noise_graph->GetYaxis()->SetTitle("CSA output [mV]");
+            output_with_noise_graph->SetTitle(("Amplifier signal with added noise in pixel (" + std::to_string(pixel_index.x()) + "," +
+                                   std::to_string(pixel_index.y()) +  ")")
+                                      .c_str());
+            getROOTDirectory()->WriteTObject(output_with_noise_graph, name.c_str());
 
 	}
 
