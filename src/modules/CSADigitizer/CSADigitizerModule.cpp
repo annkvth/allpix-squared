@@ -35,13 +35,19 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     random_generator_.seed(getRandomSeed());
 
     // Set defaults for config variables
+    config_.setDefault<bool>("simple_parametrisation", false);
+    // defaults for the "advanced" parametrisation
     config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
     config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
     config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s") /Units::get(1, "V")); //asv can't get the unit C/s/V ?!
-    //    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s/V")); //asv can't get the unit C/s/V ?!
     config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
+    // and for the basic one
+    config_.setDefault<double>("feedback_time_constant", Units::get(10e-9, "s"));  // R_f * C_f
+    config_.setDefault<double>("rise_time_constant", Units::get(1e-9, "s"));  
+
+
     config_.setDefault<double>("amp_time_window", Units::get(0.5e-6, "s"));
 
     config_.setDefault<bool>("output_pulsegraphs", false);
@@ -50,40 +56,48 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<int>("output_plots_bins", 100);
 
     // asv noise test
-    config_.setDefault<double>("sigma_noise", Units::get(1e-3, "V"));
+    config_.setDefault<double>("sigma_noise", Units::get(0.1e-3, "V"));
 
     // Copy some variables from configuration to avoid lookups:
-    ikrum_ = config_.get<double>("krummenacher_current");
-    cd_ = config_.get<double>("detector_capacitance");
-    cf_ = config_.get<double>("feedback_capacitance");
-    co_ = config_.get<double>("amp_output_capacitance");
-    gm_ = config_.get<double>("transconductance"); 
-    vt_ = config_.get<double>("v_temperature");
-    tmax_ = config_.get<double>("amp_time_window");
+    if (config_.get<bool>("simple_parametrisation")){
+      tauF_ = config_.get<double>("feedback_time_constant");
+      tauR_ = config_.get<double>("rise_time_constant");
+    }
+    else{
+      ikrum_ = config_.get<double>("krummenacher_current");
+      cd_ = config_.get<double>("detector_capacitance");
+      cf_ = config_.get<double>("feedback_capacitance");
+      co_ = config_.get<double>("amp_output_capacitance");
+      gm_ = config_.get<double>("transconductance"); 
+      vt_ = config_.get<double>("v_temperature");
+      tmax_ = config_.get<double>("amp_time_window");
 
+      // helper variables: transconductance and resistance in the feedback loop 
+      // weak inversion: gf = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
+      // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
+      gf_ = ikrum_/(2.0*1.5*vt_)  ;  
+      rf_ = 2./gf_;       //feedback resistor
+      tauF_=rf_*cf_;
+      tauR_=(cd_*co_)/(gm_ *cf_);
+      LOG(DEBUG) << "Parameters: rf " << Units::display(rf_, "V*s/C") << ", cf_ " << Units::display(cf_, "C/V")
+		 << ", cd_ " << Units::display(cd_, "C/V") << ", co_ " << Units::display(co_, "C/V")
+		 << ", gm_ " << Units::display(gm_, "C/s/V") << ", tauF_ " << Units::display(tauF_, "s")
+		 << ", tauR_ " << Units::display(tauR_, "s");
+      
+    }
 
     output_plots_ = config_.get<bool>("output_plots");
     output_pulsegraphs_ = config_.get<bool>("output_pulsegraphs");
 
-    // helper variables: transconductance and resistance in the feedback loop 
-    // weak inversion: gf = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
-    // n_wi typically 1.5, for circuit descriped in  Kleczek 2016 JINST11 C12001: I->I_krumm/2
-    gf_ = ikrum_/(2.0*1.5*vt_)  ;  
-    rf_ = 2./gf_;       //feedback resistor
 
     // impulse response of the CSA from Kleczek 2016 JINST11 C12001
     // H(s) = Rf / ((1+ tau_f s) * (1 + tau_r s)), with
     // tau_f = Rf Cf , rise time constant tau_r = (C_det * C_out) / ( gm_ * C_F )
     // inverse Laplace transform R/((1+a*s)*(1+s*b)) is (wolfram alpha) (R (e^(-t/a) - e^(-t/b))) /(a - b) 
     fImpulseResponse_ = new TF1("fImpulseResponse_", "[0] * ( exp(-x / [1]) - exp(-x/[2]) ) / ([1]-[2])", 0, tmax_);
-    fImpulseResponse_->SetParameters(rf_, rf_*cf_, (cd_*co_)/(gm_ *cf_));
-    LOG(DEBUG) << "Parameters: rf " << Units::display(rf_, "V*s/C") << ", cf_ " << Units::display(cf_, "C/V")
-	       << ", cd_ " << Units::display(cd_, "C/V") << ", co_ " << Units::display(co_, "C/V")
-	       << ", gm_ " << Units::display(gm_, "C/s/V");
-    LOG(DEBUG) << "in native units: rf " << rf_ << ", cf_ " << cf_ << ", cd_ " << cd_ << ", co_ " << co_  << ", gm_ " << gm_;
+    fImpulseResponse_->SetParameters(rf_, tauF_, tauR_);
 
-    LOG(DEBUG) << "at 50 ns: " << fImpulseResponse_->Eval(50e-9) <<" or maybe " << fImpulseResponse_->Eval(50)
-	 << " or even " << 7e6 * ( exp(-50e-9 / 7e6*5e-15) - exp(-50e-9*50e-6*5e-15/(100e-15*20e-15)) ) / ( 7e6*5e-15 -(100e-15*20e-15)/(50e-6*5e-15) );
+
 }
 
 
@@ -97,6 +111,7 @@ void CSADigitizerModule::init() {
         int maximum = static_cast<int>(Units::convert(config_.get<int>("output_plots_scale"), "ke"));
         auto nbins = config_.get<int>("output_plots_bins");
 
+	//asv todo cleanup here, think of better histos?
         // Create histograms if needed
         h_pxq = new TH1D("pixelcharge", "raw pixel charge;pixel charge [ke];pixels", nbins, 0, maximum);
 	h_amplified_charge_ = new TH1D("amplifiedcharge", "amplified charge;amplified pixel charge [ke];events", nbins, 0, maximum);
@@ -105,6 +120,7 @@ void CSADigitizerModule::init() {
     }
 
     //asv todo do not hardcode the binning!! setup parameter , compare to pulse timestep in run
+    // maybe just initialise for the very first event in run?
        double binning = 0.01;
 	const int npx = static_cast<int>(ceil(tmax_/binning));
 	LOG(TRACE) << "binning  : " <<  binning << ", tmax_ : " <<  tmax_ << ", npx " << npx;
