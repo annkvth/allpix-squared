@@ -39,16 +39,18 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     // defaults for the "advanced" parametrisation
     config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
     config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
-    config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
     config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s") /Units::get(1, "V")); //asv can't get the unit C/s/V ?!
     config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
     // and for the basic one
-    config_.setDefault<double>("feedback_time_constant", Units::get(10e-9, "s"));  // R_f * C_f
+    config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("rise_time_constant", Units::get(1e-9, "s"));  
+    // for both
+    config_.setDefault<double>("feedback_time_constant", Units::get(10e-9, "s"));  // R_f * C_f
 
 
     config_.setDefault<double>("amp_time_window", Units::get(0.5e-6, "s"));
+    config_.setDefault<double>("threshold", Units::get(10e-3, "V"));
 
     config_.setDefault<bool>("output_pulsegraphs", false);
     config_.setDefault<bool>("output_plots", config_.get<bool>("output_pulsegraphs"));
@@ -62,6 +64,7 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     if (config_.get<bool>("simple_parametrisation")){
       tauF_ = config_.get<double>("feedback_time_constant");
       tauR_ = config_.get<double>("rise_time_constant");
+      rf_=tauF_/cf_;
     }
     else{
       ikrum_ = config_.get<double>("krummenacher_current");
@@ -166,15 +169,53 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	  }
 	}
 	auto output_vec = output_pulse.getPulse(); 
-	LOG(TRACE) << "amplified signal" << Units::display(output_pulse.getCharge(), "e")
-		   << " in a pulse with " << output_vec.size() << "bins";
+	LOG(TRACE) << "amplified signal" << output_pulse.getCharge()/1e9
+		   << " mV in a pulse with " << output_vec.size() << "bins";
 
 
+	
+	//TOA and TOT logic  
+	auto threshold = config_.get<double>("threshold");
+	bool is_over_threshold=false;
+	double toa, tot;
+	for(long unsigned int i=0; i<output_vec.size(); ++i){
 
-	//asv apply noise on the amplified pulse?
+	  //use while instead of for maybe?
+	  // set time of arrival when pulse first crosses threshold, start countint ToT
+	  if (output_vec.at(i)>threshold && !is_over_threshold){
+	    is_over_threshold = true;
+	    toa= i * timestep;
+	    tot=timestep;
+	    LOG(TRACE) << "now starting the tot counting...";
+	  };
+	  // asv need to add some precision to avoid noise stopping tot
+	  // or do TOT/TOA before adding noise?
+	  if (is_over_threshold){
+	    if (output_vec.at(i)>threshold){	      
+	      tot+=timestep;
+	    }
+	    else{
+	      is_over_threshold=false;
+	      break;
+	    }
+	  }
+	  else if (output_vec.size()-1 == i){ // pulse over, never crossed the threshold
+	    toa=0;
+	    tot=0;
+	    LOG(TRACE) << " - never crossing the threshold";
+	  }
+	}
+	LOG(TRACE) << "ToA " << toa << " ns, ToT " << tot << "ns";
+
+	
+
+	//apply noise on the amplified pulse
 	std::normal_distribution<double> pulse_smearing(0, config_.get<double>("sigma_noise"));
 	std::vector<double> output_with_noise(output_vec.size());
 	std::transform(output_vec.begin(), output_vec.end(), output_with_noise.begin(), [&pulse_smearing, this](auto& c){return c+pulse_smearing(random_generator_);});
+
+
+	
 	
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(inputcharge / 1e3);
