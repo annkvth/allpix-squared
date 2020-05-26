@@ -122,16 +122,6 @@ void CSADigitizerModule::init() {
 
     }
 
-    //asv todo do not hardcode the binning!! setup parameter , compare to pulse timestep in run
-    // maybe just initialise for the very first event in run?
-       double binning = 0.01;
-	const int npx = static_cast<int>(ceil(tmax_/binning));
-	LOG(TRACE) << "binning  : " <<  binning << ", tmax_ : " <<  tmax_ << ", npx " << npx;
-	
-	impulseResponse_ = new double[npx];
-	for (int ipx=0; ipx<npx; ++ipx){
-	  impulseResponse_[ipx]=fImpulseResponse_->Eval(ipx*binning);
-	}
     
 }
 
@@ -151,17 +141,24 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	auto pulse_vec = pulse.getPulse();           // the vector of the charges 
         auto timestep = pulse.getBinning();
 	const int npx = static_cast<int>(ceil(tmax_/timestep));
-	LOG(TRACE) << "timestep  : " <<  timestep << ", tmax_ : " <<  tmax_ << ", npx " << npx;
-	
+
+	if (first_event_){ // initialize impulse response function - assume all time bins are equal
+	  impulseResponse_ = new double[npx];
+	  for (int ipx=0; ipx<npx; ++ipx){
+	    impulseResponse_[ipx]=fImpulseResponse_->Eval(ipx*timestep);
+	  }
+	  first_event_ = false;
+	  LOG(TRACE) << "impulse response initalised. timestep  : " <<  timestep << ", tmax_ : " <<  tmax_ << ", npx " << npx;
+	}
 	
 	Pulse output_pulse(timestep);
-	unsigned int input_length = pulse_vec.size();
+	auto input_length = pulse_vec.size();
 	LOG(TRACE) << "Preparing pulse for pixel " << pixel_index << ", " << pulse_vec.size() << " bins of "
 		   << Units::display(timestep, {"ps", "ns"})
 		   << ", total charge: " << Units::display(pulse.getCharge(), "e");
 	//convolution of the pulse (size input_length) with the impulse response (size npx)
-	for(unsigned int k=0; k<npx; ++k){
-	  for(unsigned int i=0; i<=k; ++i){
+	for(unsigned long int k=0; k<npx; ++k){
+	  for(unsigned long int i=0; i<=k; ++i){
 	    if( (k-i) < input_length){
 	      //asv to do: not a charge, but voltage pulse... still use this?
 	      output_pulse.addCharge(pulse_vec.at(k-i) * impulseResponse_[i], timestep * static_cast<double>(k));
@@ -301,9 +298,10 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	}
 
 
-	// asv todo THINK ABOUT WHAT TO DO HERE
+	// asv output "charge" of output pulse, or output tot?
         // Add the hit to the hitmap
-        hits.emplace_back(pixel, 0, output_pulse.getCharge(), &pixel_charge);
+	//        hits.emplace_back(pixel, toa, output_pulse.getCharge(), &pixel_charge);
+        hits.emplace_back(pixel, toa, tot, &pixel_charge);
     }
 
     // Output summary and update statistics

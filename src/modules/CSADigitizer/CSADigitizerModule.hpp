@@ -60,7 +60,7 @@ namespace allpix {
         void finalize() override;
 
     private:
-      bool output_plots_{}, output_pulsegraphs_{};
+      bool output_plots_{}, output_pulsegraphs_{}, first_event_{true};
       
         std::mt19937_64 random_generator_;
 
@@ -74,12 +74,12 @@ namespace allpix {
 
       
         // krummenacher_current, detector_capacitance, feedback_capacitance, amp_output_capacitance, transconductance, v_temperature
-      double ikrum_, cd_, cf_, co_, gm_, vt_, tauF_, tauR_;
+        double ikrum_{}, cd_{}, cf_{}, co_{}, gm_{}, vt_{}, tauF_{}, tauR_{};
       
         // helper variables for transfer function
-        double gf_, rf_, tmax_;
-        double *impulseResponse_;	  
-        TF1 *fImpulseResponse_;
+        double gf_{}, rf_{}, tmax_{};
+        double *impulseResponse_{};	  
+        TF1 *fImpulseResponse_{};
 
         std::vector<double> amplified_pulse_;
         // Output histograms
