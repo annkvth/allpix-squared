@@ -37,10 +37,10 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     // Set defaults for config variables
     config_.setDefault<bool>("simple_parametrisation", true);
     // defaults for the "advanced" parametrisation
-    config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("rise_time_constant", Units::get(1e-9, "s"));  
-    // for both
     config_.setDefault<double>("feedback_time_constant", Units::get(10e-9, "s"));  // R_f * C_f
+    // for both cases
+    config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     // and for the advanced one
     config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
     config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
@@ -59,10 +59,14 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
 
 
     // Copy some variables from configuration to avoid lookups:
+    tmax_ = config_.get<double>("amp_time_window");
     if (config_.get<bool>("simple_parametrisation")){
       tauF_ = config_.get<double>("feedback_time_constant");
       tauR_ = config_.get<double>("rise_time_constant");
-      rf_=tauF_/cf_;
+      cf_ = config_.get<double>("feedback_capacitance");
+      rf_=tauF_/cf_; 
+      LOG(DEBUG) << "Parameters: cf " << Units::display(cf_/1e-15, "C/V")  << ", rf " << Units::display(rf_, "V*s/C")
+		 << ", tauF_ " << Units::display(tauF_, "s") << ", tauR_ " << Units::display(tauR_, "s");
     }
     else{
       ikrum_ = config_.get<double>("krummenacher_current");
@@ -71,7 +75,6 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
       co_ = config_.get<double>("amp_output_capacitance");
       gm_ = config_.get<double>("transconductance"); 
       vt_ = config_.get<double>("v_temperature");
-      tmax_ = config_.get<double>("amp_time_window");
 
       // helper variables: transconductance and resistance in the feedback loop 
       // weak inversion: gf = I/(n V_t) (e.g. Binkley "Tradeoff and Optimisation in Analog CMOS design")
@@ -83,10 +86,9 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
       LOG(DEBUG) << "Parameters: rf " << Units::display(rf_, "V*s/C") << ", cf_ " << Units::display(cf_, "C/V")
 		 << ", cd_ " << Units::display(cd_, "C/V") << ", co_ " << Units::display(co_, "C/V")
 		 << ", gm_ " << Units::display(gm_, "C/s/V") << ", tauF_ " << Units::display(tauF_, "s")
-		 << ", tauR_ " << Units::display(tauR_, "s");
-      
+		 << ", tauR_ " << Units::display(tauR_, "s");      
     }
-
+    
     output_plots_ = config_.get<bool>("output_plots");
     output_pulsegraphs_ = config_.get<bool>("output_pulsegraphs");
 
