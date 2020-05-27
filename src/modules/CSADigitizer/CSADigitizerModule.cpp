@@ -35,18 +35,18 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     random_generator_.seed(getRandomSeed());
 
     // Set defaults for config variables
-    config_.setDefault<bool>("simple_parametrisation", false);
+    config_.setDefault<bool>("simple_parametrisation", true);
     // defaults for the "advanced" parametrisation
-    config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
-    config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
-    config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
-    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s") /Units::get(1, "V")); //asv can't get the unit C/s/V ?!
-    config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
-    // and for the basic one
     config_.setDefault<double>("feedback_capacitance", Units::get(5e-15, "C/V"));
     config_.setDefault<double>("rise_time_constant", Units::get(1e-9, "s"));  
     // for both
     config_.setDefault<double>("feedback_time_constant", Units::get(10e-9, "s"));  // R_f * C_f
+    // and for the advanced one
+    config_.setDefault<double>("krummenacher_current", Units::get(20e-9, "C/s"));
+    config_.setDefault<double>("detector_capacitance", Units::get(100e-15, "C/V"));
+    config_.setDefault<double>("amp_output_capacitance", Units::get(20e-15, "C/V"));
+    config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s/V") );
+    config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
 
 
     config_.setDefault<double>("amp_time_window", Units::get(0.5e-6, "s"));
@@ -117,8 +117,9 @@ void CSADigitizerModule::init() {
 	//asv todo cleanup here, think of better histos?
         // Create histograms if needed
         h_pxq = new TH1D("pixelcharge", "raw pixel charge;pixel charge [ke];pixels", nbins, 0, maximum);
-	h_amplified_charge_ = new TH1D("amplifiedcharge", "amplified charge;amplified pixel charge [ke];events", nbins, 0, maximum);
-        h_pulse_charge_ = new TH1D("pulsecharge", "input pulse charge per pixel;input pulse pixel charge [ke];pixels", nbins, 0, maximum);
+        h_tot = new TH1D("tot", "time over threshold;time over threshold [ns];pixels", nbins, 0, maximum);
+        h_toa = new TH1D("toa", "time of arrival;time of arrival [ns];pixels", nbins, 0, maximum);
+	h_pulseheight = new TH1D("pulseheight", "amplifier output;amplifier output[mV];pixels", nbins, 0, maximum);
 
     }
 
@@ -212,14 +213,15 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	std::transform(output_vec.begin(), output_vec.end(), output_with_noise.begin(), [&pulse_smearing, this](auto& c){return c+pulse_smearing(random_generator_);});
 
 
-	
-	
+	//asv do these histos make sense? what about one with the noise?
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(inputcharge / 1e3);
-	    h_pulse_charge_->Fill(pulse.getCharge() / 1e3);
-	    h_amplified_charge_->Fill(output_pulse.getCharge() / 1e3);
+	    h_tot->Fill(tot);
+	    h_toa->Fill(toa);
+	    h_pulseheight->Fill(output_pulse.getCharge()*1e-9);
         }
 
+	
         // Fill a graphs with the individual pixel pulses:
         if(output_pulsegraphs_) {
             // Generate x-axis:
@@ -298,7 +300,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	}
 
 
-	// asv output "charge" of output pulse, or output tot?
+	// asv output "charge" of output pulse, or output tot? also add hit if never over threshold?
         // Add the hit to the hitmap
 	//        hits.emplace_back(pixel, toa, output_pulse.getCharge(), &pixel_charge);
         hits.emplace_back(pixel, toa, tot, &pixel_charge);
@@ -320,13 +322,10 @@ void CSADigitizerModule::finalize() {
         // Write histograms
         LOG(TRACE) << "Writing output plots to file";
         h_pxq->Write();
-        h_pulse_charge_->Write();
-        h_amplified_charge_->Write();
+        h_tot->Write();
+        h_toa->Write();
+        h_pulseheight->Write();
 	
-        // if(config_.get<int>("adc_resolution") > 0) {
-        //     h_pxq_adc_smear->Write();
-        //     h_calibration->Write();
-        // }
     }
 
     LOG(INFO) << "Digitized " << total_hits_ << " pixel hits in total";

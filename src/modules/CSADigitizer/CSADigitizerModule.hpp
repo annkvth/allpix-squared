@@ -83,7 +83,7 @@ namespace allpix {
 
         std::vector<double> amplified_pulse_;
         // Output histograms
-        TH1D *h_pxq{}, *h_amplified_charge_{}, *h_pulse_charge_{};
+        TH1D *h_pxq{}, *h_tot{}, *h_toa{}, *h_pulseheight{};
        
     };
 } // namespace allpix
