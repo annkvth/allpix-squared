@@ -15,6 +15,7 @@
 #include <TFile.h>
 #include <TGraph.h>
 #include <TH1D.h>
+#include <TH2D.h>
 #include <TProfile.h>
 
 #include "objects/PixelHit.hpp"
@@ -119,7 +120,7 @@ void CSADigitizerModule::init() {
         h_pxq = new TH1D("pixelcharge", "raw pixel charge;pixel charge [ke];pixels", nbins, 0, maximum);
         h_tot = new TH1D("tot", "time over threshold;time over threshold [ns];pixels", nbins, 0, maximum);
         h_toa = new TH1D("toa", "time of arrival;time of arrival [ns];pixels", nbins, 0, maximum);
-	h_pulseheight = new TH1D("pulseheight", "amplifier output;amplifier output[mV];pixels", nbins, 0, maximum);
+	h_pxq_vs_tot = new TH2D("pxqvstot", "ToT vs raw pixel charge;pixel charge [ke];ToT [ns]", nbins, 0, maximum, nbins, 0, tmax_);
 
     }
 
@@ -203,7 +204,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	    LOG(TRACE) << " - never crossing the threshold";
 	  }
 	}
-	LOG(TRACE) << "ToA " << toa << " ns, ToT " << tot << "ns";
+ 	LOG(TRACE) << "ToA " << toa << " ns, ToT " << tot << "ns";
 
 	
 
@@ -217,7 +218,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
             h_pxq->Fill(inputcharge / 1e3);
 	    h_tot->Fill(tot);
 	    h_toa->Fill(toa);
-	    h_pulseheight->Fill(output_pulse.getCharge()/1e-9);
+	    h_pxq_vs_tot->Fill(inputcharge / 1e3,tot);
         }
 
 	
@@ -323,7 +324,7 @@ void CSADigitizerModule::finalize() {
         h_pxq->Write();
         h_tot->Write();
         h_toa->Write();
-        h_pulseheight->Write();
+        h_pxq_vs_tot->Write();
 	
     }
 
