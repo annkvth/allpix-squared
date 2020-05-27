@@ -48,17 +48,15 @@ CSADigitizerModule::CSADigitizerModule(Configuration& config,
     config_.setDefault<double>("transconductance", Units::get(50e-6, "C/s/V") );
     config_.setDefault<double>("v_temperature", Units::get(25.7e-3, "eV"));  // Boltzmann kT at 298K
 
-
     config_.setDefault<double>("amp_time_window", Units::get(0.5e-6, "s"));
     config_.setDefault<double>("threshold", Units::get(10e-3, "V"));
-
+    config_.setDefault<double>("sigma_noise", Units::get(0.1e-3, "V"));
+    
     config_.setDefault<bool>("output_pulsegraphs", false);
     config_.setDefault<bool>("output_plots", config_.get<bool>("output_pulsegraphs"));
     config_.setDefault<int>("output_plots_scale", Units::get(30, "ke"));
     config_.setDefault<int>("output_plots_bins", 100);
 
-    // asv noise test
-    config_.setDefault<double>("sigma_noise", Units::get(0.1e-3, "V"));
 
     // Copy some variables from configuration to avoid lookups:
     if (config_.get<bool>("simple_parametrisation")){
@@ -114,7 +112,7 @@ void CSADigitizerModule::init() {
         int maximum = static_cast<int>(Units::convert(config_.get<int>("output_plots_scale"), "ke"));
         auto nbins = config_.get<int>("output_plots_bins");
 
-	//asv todo cleanup here, think of better histos?
+	//asv do these histos make sense? what about one with the noise?
         // Create histograms if needed
         h_pxq = new TH1D("pixelcharge", "raw pixel charge;pixel charge [ke];pixels", nbins, 0, maximum);
         h_tot = new TH1D("tot", "time over threshold;time over threshold [ns];pixels", nbins, 0, maximum);
@@ -213,7 +211,6 @@ void CSADigitizerModule::run(unsigned int event_num) {
 	std::transform(output_vec.begin(), output_vec.end(), output_with_noise.begin(), [&pulse_smearing, this](auto& c){return c+pulse_smearing(random_generator_);});
 
 
-	//asv do these histos make sense? what about one with the noise?
         if(config_.get<bool>("output_plots")) {
             h_pxq->Fill(inputcharge / 1e3);
 	    h_tot->Fill(tot);
