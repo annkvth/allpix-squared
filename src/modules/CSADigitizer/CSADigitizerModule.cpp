@@ -217,7 +217,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
             h_pxq->Fill(inputcharge / 1e3);
 	    h_tot->Fill(tot);
 	    h_toa->Fill(toa);
-	    h_pulseheight->Fill(output_pulse.getCharge()*1e-9);
+	    h_pulseheight->Fill(output_pulse.getCharge()/1e-9);
         }
 
 	
