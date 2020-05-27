@@ -267,7 +267,7 @@ void CSADigitizerModule::run(unsigned int event_num) {
 
 	    // asv there needs to be a better way to plot in mV ?
             std::vector<double> output_in_mV(output_vec.size());
-	    double scaleConvert{1e-9};
+	    double scaleConvert{1e9};
 	    std::transform(output_vec.begin(), output_vec.end(), output_in_mV.begin(), [&scaleConvert](auto& c){return c*scaleConvert;});
 
             name = "output_ev" + std::to_string(event_num) + "_px" + std::to_string(pixel_index.x()) + "-" +
